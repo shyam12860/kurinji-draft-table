@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kurinji Draft - League Table</title>
+    <style>
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        th, td {
+            border: 1px solid black;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: black;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Kurinji Draft</h1>
+            <p>League Table - Live Standings</p>
+            <p id="gameweek">Gameweek: -</p>
+        </div>
+        
+        <div class="table-container">
+            <div id="loading" class="loading">
+                🔄 Loading league data...
+            </div>
+            
+            <div id="error" class="error" style="display: none;">
+                ❌ Failed to load league data. Please try again.
+            </div>
+            
+            <table class="league-table" id="leagueTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Pos</th>
+                        <th>Team</th>
+                        <th>Player</th>
+                        <th>GW</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const ORIGINAL_API_URL = 'https://draft.premierleague.com/api/league/32805/details';
+        const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+        const API_URL = CORS_PROXY + encodeURIComponent(ORIGINAL_API_URL);
+        
+        async function loadLeagueData() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const table = document.getElementById('leagueTable');
+
+            loading.style.display = 'block';
+            error.style.display = 'none';
+            table.style.display = 'none';
+            
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                displayLeagueTable(data);
+                
+            } catch (err) {
+                console.error('Error loading league data:', err);
+                loading.style.display = 'none';
+                error.style.display = 'block';
+                error.innerHTML = `❌ Failed to load league data: ${err.message}<br>Please check if the API is accessible.`;
+            }
+        }
+        
+        function displayLeagueTable(data) {
+            const loading = document.getElementById('loading');
+            const table = document.getElementById('leagueTable');
+            const tableBody = document.getElementById('tableBody');
+            
+            const teamPoints = {};
+            const teamGameweekPoints = {};
+            const teamInfo = {};
+
+            data.league_entries.forEach(entry => {
+                if (entry.entry_id && entry.entry_name) {
+                    teamPoints[entry.id] = 0;
+                    teamGameweekPoints[entry.id] = 0;
+                    teamInfo[entry.id] = {
+                        name: entry.entry_name,
+                        player: `${entry.player_first_name || ''} ${entry.player_last_name || ''}`.trim() || 'Unknown Player'
+                    };
+                }
+            });
+            
+            let currentGameweek = 1;
+
+            const ongoingMatches = data.matches.filter(match => match.started && !match.finished);
+            if (ongoingMatches.length > 0) {
+                currentGameweek = Math.max(...ongoingMatches.map(match => match.event));
+            } else {
+                const finishedMatches = data.matches.filter(match => match.started && match.finished);
+                if (finishedMatches.length > 0) {
+                    currentGameweek = Math.max(...finishedMatches.map(match => match.event));
+                }
+            }
+
+            document.getElementById('gameweek').textContent = `Gameweek: ${currentGameweek}`;
+
+            data.matches.forEach(match => {
+                if (match.finished) {
+                    if (teamPoints.hasOwnProperty(match.league_entry_1)) {
+                        teamPoints[match.league_entry_1] += match.league_entry_1_points || 0;
+                    }
+                    if (teamPoints.hasOwnProperty(match.league_entry_2)) {
+                        teamPoints[match.league_entry_2] += match.league_entry_2_points || 0;
+                    }
+
+                    if (match.event === currentGameweek) {
+                        if (teamGameweekPoints.hasOwnProperty(match.league_entry_1)) {
+                            teamGameweekPoints[match.league_entry_1] += match.league_entry_1_points || 0;
+                        }
+                        if (teamGameweekPoints.hasOwnProperty(match.league_entry_2)) {
+                            teamGameweekPoints[match.league_entry_2] += match.league_entry_2_points || 0;
+                        }
+                    }
+                }
+            });
+            
+            const sortedTeams = Object.entries(teamPoints)
+                .map(([id, totalPoints]) => ({
+                    id,
+                    totalPoints,
+                    gameweekPoints: teamGameweekPoints[id] || 0,
+                    ...teamInfo[id]
+                }))
+                .sort((a, b) => b.totalPoints - a.totalPoints);
+
+            tableBody.innerHTML = '';
+            
+            sortedTeams.forEach((team, index) => {
+                const row = document.createElement('tr');
+                const position = index + 1;
+                
+                if (position <= 3) {
+                    row.classList.add('top-3');
+                }
+                
+                row.innerHTML = `
+                    <td class="position">${position}</td>
+                    <td class="team-name">${team.name}</td>
+                    <td class="player-name">${team.player}</td>
+                    <td class="points">${team.gameweekPoints}</td>
+                    <td class="points">${team.totalPoints}</td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+            
+            loading.style.display = 'none';
+            table.style.display = 'table';
+        }
+        
+        document.addEventListener('DOMContentLoaded', loadLeagueData);
+    </script>
+</body>
+</html>
